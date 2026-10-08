@@ -1,0 +1,149 @@
+---
+title: "Investigating the relationship between home prices and proximity to rail trails"
+author: "Brandon Cheung and Jordan Liu"
+format: pdf
+editor: source
+---
+
+```{r, echo=F, message=F, warning=F}
+library(tidyverse)
+library(gt)
+library(ggeffects)
+library(GGally)
+library(gtsummary) # for creating nice tables
+# load additional libraries and data here 
+rail <- read.csv("Rail.trails.csv", header = T)
+
+lm_un = lm(log(adj2007) ~ acre + bikescore + walkscore + distance + latitude + longitude + squarefeet + bedrooms, data = rail)
+
+#creating modified rail dataframe for paired scatterplots
+m_rail <- subset(rail, select = -c(adj1998, adj2011, garage_spaces, price1998, price2007, price2011, price2014, housenum, streetname, streetno, bedrooms, zip))
+
+```
+
+# Introduction
+
+Rail trails, which are former railway lines converted into walking and cycling paths, are often seen as amenities that can increase nearby property values. At the same time, some residents may be concerned about potential noise or reduced privacy. This question matters for Acme Homes, LLC, a company that builds large numbers of homes and wants to know the locations upon which it would be most profitable to build. If buyers are willing to pay more to live near a rail trail, then areas closer to rail trails could be better places upon which to build homes. In this analysis, we investigate whether homebuyers are willing to pay more for a house closer to a rail trail and what the relationship between proximity to a rail trail and house value is. If proximity to a trail is attractive to homebuyers, we might expect homes closer to the trail to be worth more. However, a simple comparison could be misleading because homes near the trail may tend to be located in more walkable and centrally located neighborhoods. In other words, proximity to the trail could be related to other characteristics that might also affect home values. 
+
+We use data collected in 2007 on 104 homes in Northampton and Florence, Massachusetts. The data combine Zillow home value estimates with WalkScore.com measures of neighborhood walkability and bikeability. Although homes closer to the trail appear to be worth more on average, this relationship is no longer statistically significant after accounting for home size, walkability, bikeability, and location. For Acme Homes, LLC, this suggests that proximity to a rail trail is not a strong reason to choose a building location.
+
+# Data
+
+The dataset contains 104 observations of homes in Northampton and Florence, Massachusetts. Each row represents one home. Our response variable is the estimated value of the home in 2007 from Zillow, measured in thousands of 2014 dollars so that values are adjusted for inflation. Our main predictor is the distance from the home to the nearest rail trail entrance. The data documentation states that this distance is measured in feet, but the observed values range from 0.04 to 3.98. If these values were in feet, the closest home would be about half an inch from a trail entrance and the farthest would be only 4 feet away, which would be impossible. The values are instead consistent with distances in miles or thousands of feet, so we conclude that the unit in the documentation is a labeling error. Since only the unit label is wrong and not the values themselves, no homes are removed from the analysis.
+
+We also use several variables that describe each home and its surroundings. Square footage is the finished interior living space in thousands of square feet, lot size is the land size in acres, and bedrooms is the number of bedrooms, ranging from 1 to 6. Walk Score and Bike Score are ratings from WalkScore.com on a scale of 0 to 100. Higher Walk Scores mean daily errands can be done without a car and higher Bike Scores mean flatter terrain and better bike lanes. Location is recorded by latitude and longitude in decimal degrees and by ZIP code, which is either Northampton or Florence. The dataset also includes the number of garage spaces, value estimates from other years, and identifiers such as street name and house number, which we do not use in our model.
+
+Figure 1 shows the distribution of each main variable along the diagonal and the relationships between them. Home values are strongly right-skewed, with most homes worth around 300,000 dollars and one near 800,000 dollars, so we model the log of home value to reduce the influence of the most expensive homes. Square footage is also right-skewed, with one home above 4,000 square feet. These appear to be genuinely large homes rather than errors, so we keep them. Distance is right-skewed, with most homes within a mile of a trail entrance and a smaller group 2 to 3 miles away. Walk Score and Bike Score both suggest a group of car dependent homes and a group of more walkable homes, which largely matches the two ZIP codes, since Northampton homes tend to be closer to the trail and more walkable than homes in Florence. Homes closer to the trail tend to be worth more, with a correlation of -0.49 between distance and value. However, distance is strongly related to Walk Score and Bike Score, with correlations of -0.76 and -0.84, and both scores are positively related to value. This suggests the raw relationship may partly reflect walkability, so we include both scores in our model. We include latitude and longitude because home values may vary with location. Also, we include square footage, bedrooms, and lot size to account for home size, with square footage having a stronger relationship of 0.87. Walk Score and Bike Score are very strongly related to each other, with a correlation of 0.93, which may make their individual effects hard to estimate but should not affect our estimate for distance, the variable of interest.
+
+There is no missing data in any of the variables, so all 104 observations are used in the analysis. However, the data has several limitations that call into question the generalizability of our results. Home values are Zillow estimates rather than actual sale prices, so they may not reflect what buyers actually paid. All homes come from one small college town, so the results may not apply to larger cities or to areas where trails serve a different purpose. Moreover, the data is nearly twenty years old, so our inferences may not apply to the present-day housing market. Because the data is observational, we can describe how distance and home value are related but cannot conclude that the trail causes higher or lower values. Finally, the data does not include some factors that likely affect home values, such as the age and condition of the home, local school quality, and distance to downtown.
+
+```{r}
+#| echo: false
+#| fig.width: 8
+#| fig.height: 8
+#| message: false
+#| warning: false
+#| fig.cap: "Paired plots show relationships between relevant variables."
+
+ggpairs(m_rail,
+        lower = list(continuous = wrap("points", alpha = 0.5)),         title = "",
+        columns = c("acre", "adj2007", "bikescore", "distance", "latitude", "longitude", "squarefeet", "walkscore"),
+        columnLabels = c("Lot Size", "Adj. 2007 Price", "Bike Score", "Distance", "Latitude", "Longitude", "Square Feet", "Walk Score")) + 
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 6),
+    axis.text.y = element_text(hjust = 1, size = 6),
+    plot.title = element_text(face = "bold")
+  )
+
+
+```
+
+# Methods
+
+Our model is a multiple log-linear regression of adjusted 2007 Zillow home value estimates (adj2007) on distance to the nearest rail trail, walkability, bikeability, lot size, interior space, number of bedrooms, longitude, and latitude. We use the adjusted 2007 Zillow estimates for the response variable, because the rest of the data is recorded from 2007. The variable of interest is the distance to the nearest rail trail. Acme Homes, LLC wants to determine whether people are willing to pay more for houses closer to rail trails, so we would conduct a one-sided t-test for the regression coefficient on distance. Walkability and bikeability are plausible confounding variables, and Figure 1 indeed shows that Walk Score and Bike Score are positively correlated with home value and negatively associated with distance to rail trails. The variables latitude and longitude are also potential confounders, if, for example, houses in the more developed urban areas of Northampton to the southeast are associated with higher distance to rail trails and higher home values. The lot size, interior space, and number of bedrooms may be important determinants of home prices, hence their inclusion as covariates. Omitting them might bias the model and cause it to attribute false significance to the distance to rail trails. 
+
+Our model omits house number and street number, since these variables are not very useful and lack explanatory power. The street name and ZIP code are omitted, because longitude and latitude are already included as controls for location. We did not include the number of garage parking spaces out of concern for multicollinearity, reasoning that a house with a low Bike Score and low Walk Score is likely to have one or more garage parking spaces. None of the other Zillow home value estimates were included, as we had chosen the adjusted 2007 estimates to proxy for home price. We considered adding interaction terms between Bike Score and the distance to rail trails and between Walk Score and the distance to rail trails, but we judged that these interactions were not significant after conducting a partial F-test. As mentioned earlier, there are also omitted variables that do not appear in the dataset, such as home condition and local school quality. 
+
+Home values are strongly right-skewed, with most homes worth around 300,000 dollars and a few worth much more (Figure 1). We therefore model the log of home value, which makes the distribution more symmetric and reduces the influence of the most expensive homes on the fitted model. This also changes how we interpret the results, since the coefficient on distance now describes the approximate percent change in home value for each additional mile from the trail rather than a change in dollars. We leave distance and the other predictors untransformed so that their coefficients remain easy to interpret in their original units.
+
+Figure 2 plots the residuals against the fitted values. The residuals are centered around zero with no clear curve, which suggests that a linear model is reasonable. However, the spread of the residuals is not constant. Residuals are more spread out for homes with fitted values in the middle of the range and tighter at the low and high ends, which suggests some heteroskedasticity. When this happens, the model may underestimate the standard errors of the coefficients, making relationships appear stronger than they really are. Since we find no significant relationship between distance and home value, this does not really change our conclusions. A few homes, labeled 35, 71, and 77 in Figure 2, have larger residuals than the rest, meaning the model predicts their values less accurately. We keep these homes because they appear to be real observations rather than errors. 
+
+Some predictors are also strongly related to each other, especially Walk Score and Bike Score. Distance appears to be collinear with latitude and longitude, so including them may increase the uncertainty in our estimate for distance. This could make a real relationship between distance and home value harder to detect, which should be kept in mind when interpreting our results. Finally, homes on the same street or in the same neighborhood may have similar values for reasons not captured by our variables, so the observations may not be fully independent.
+
+```{r}
+#| echo: false
+
+lm_un = lm(log(adj2007) ~ acre + bikescore + walkscore + distance + latitude + longitude + squarefeet + bedrooms, data = rail)
+```
+
+```{r}
+#| echo: false
+#| fig.width: 5
+#| fig.height: 3
+#| message: false
+#| warning: false
+#| fig.cap: "The residuals are heteroskedastic, so the model underestimates standard errors for estimated coefficients."
+
+# create diagnostics plot(s) here
+
+plot(lm_un, which=1, sub.caption = "")
+```
+
+# Results
+
+```{r}
+#| echo: false
+#| fig.width: 5
+#| fig.height: 3
+#| message: false
+#| warning: false
+#| fig.cap: "There is no significant relationship between home value and proximity to rail trails."
+
+pred_distance <- ggpredict(lm_un, terms = "distance")
+
+plot(pred_distance, show_data = TRUE) +
+  labs(
+    title = "",
+    x = "Distance to Rail Track",
+    y = "Adjusted 2007 Value"
+  ) +
+  theme(plot.title = element_text(face = "bold"))
+
+#summary(lm_un)
+
+```
+
+```{r}
+#| echo: false
+#| results: "asis"
+#| label: tbl-my-table
+#| tbl-cap: "The regression summary table shows that the distance to the nearest rail trail is not significant to home value."
+#| 
+# use this to code create nice tables of regression output
+# ?tbl_regression for more information
+tbl_regression(lm_un, 
+               intercept = TRUE,
+               label = list(distance ~ "Distance to rail trail",
+                            acre ~ "Lot size",
+                            bikescore ~ "Bike Score",
+                            walkscore ~ "Walk Score",
+                            latitude ~ "Latitude",
+                            longitude ~ "Longitude",
+                            squarefeet ~ "Interior space",
+                            bedrooms ~ "Bedrooms"), # replace variable names with actual meaning
+              estimate_fun = purrr::partial(style_sigfig, digits = 3), # use to adjust number of digits shown
+              pvalue_fun = purrr::partial(style_sigfig, digits = 4) # use to adjust number of digits shown
+) 
+```
+
+The null hypothesis is that the distance to the nearest rail trail is not a significant determinant of home value, while the alternate hypothesis is that a greater distance from rail trails is associated with lower home values. Holding the other predictors constant, each one-unit increase in the distance to the nearest rail trail is associated with a 0.046 percent decrease in the mean of the 2007 Zillow estimate for home value (Table 1), which is not significant at the 5% level (95% CI: \[-0.106, 0.014\], t(95) = -1.52, p~one-sided~ = 0.0667). Therefore, we fail to reject the null hypothesis. There is not strong evidence that proximity to a rail trail is associated with higher house values. 
+
+# Conclusion
+
+Our results indicate that there is not strong evidence that people are willing to pay more for a house closer to a rail trail. The p-value from a one-sided t-test on the regression coefficient of the variable of interest exceeds the 5% significance level (Table 1), meaning that we cannot conclude that proximity to rail trails is associated with higher home values. In practical terms, we see no reason why Acme Homes, LLC should consider distance to rail trails when deciding locations upon which to build homes. This provides the answer for our research questions. 
+
+As discussed earlier, limitations of our analysis include all the data being collected from one town nearly twenty years ago. Zillow estimates may not be an accurate reflection of sales price. There is also no data on potential key omitted variables, such as home condition, local school quality, and distance to downtown. All these limitations may have introduced omitted variable bias into our model. Collecting more recent data on relevant variables from a number of towns may address these limitations and may lead to different conclusions.
+
+Heteroskedasticity is also a potential limitation. Despite the use of a log transformation, the residuals did not become homoskedastic. Here, this limitation does not affect our conclusion, because we have failed to reject the null hypothesis despite the model producing an underestimate of the standard error for the estimated coefficient. One way to address heteroskedasticity might be the use of heteroskedasticity-robust standard errors. 
+
+Furthermore, a more parsimonious model may have been appropriate. Looking back, we might have considered dropping some highly collinear covariates while keeping important confounding variables. For example, a walkable neighborhood would naturally be bikeable too, so Bike Score might be dropped from the model. A more problematic issue is that multicollinearity between latitude, longitude, and distance to rail trails may have made it more difficult to estimate the relationship between distance and home value. Removing latitude and longitude could address this instance of multicollinearity. The use of a parsimonious model likely would have produced a lower p-value and a different conclusion rejecting the null hypothesis. It is worth considering the issue of overfitting more deeply in future projects. 
